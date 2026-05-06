@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>스튜디오푸블 FOOVEL — 채널 현황 대시보드</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Pretendard', 'Apple SD Gothic Neo', sans-serif; background: #f5f5f3; color: #1a1a1a; font-size: 14px; line-height: 1.6; }
+
+  .top-bar { background: #fff; border-bottom: 1px solid #e8e8e4; padding: 14px 28px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
+  .top-bar-left { display: flex; align-items: center; gap: 12px; }
+  .channel-name { font-size: 16px; font-weight: 600; color: #1a1a1a; }
+  .channel-handle { font-size: 12px; color: #888; }
+  .top-bar-right { display: flex; align-items: center; gap: 10px; }
+  .last-updated { font-size: 12px; color: #999; }
+  .refresh-btn { display: flex; align-items: center; gap: 6px; padding: 7px 14px; background: #1a1a1a; color: #fff; border: none; border-radius: 7px; font-size: 13px; cursor: pointer; transition: opacity 0.15s; }
+  .refresh-btn:hover { opacity: 0.75; }
+  .refresh-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .refresh-btn svg { transition: transform 0.6s; }
+  .refresh-btn.spinning svg { animation: spin 1s linear infinite; }
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+  .wrapper { max-width: 1080px; margin: 0 auto; padding: 28px 24px; }
+
+  .metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+  .metric-card { background: #fff; border: 1px solid #e8e8e4; border-radius: 12px; padding: 18px 20px; }
+  .metric-label { font-size: 11px; color: #999; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+  .metric-value { font-size: 26px; font-weight: 600; color: #1a1a1a; line-height: 1.1; }
+  .metric-sub { font-size: 11px; color: #bbb; margin-top: 4px; }
+  .metric-badge { display: inline-block; font-size: 11px; padding: 3px 8px; border-radius: 5px; margin-top: 6px; }
+  .badge-green { background: #edf7f0; color: #1a7a42; }
+  .badge-amber { background: #fef6e4; color: #a05c00; }
+  .badge-blue { background: #eaf2fb; color: #1a5fa3; }
+
+  .section-grid-2 { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 16px; }
+  .section-grid-equal { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  .card { background: #fff; border: 1px solid #e8e8e4; border-radius: 12px; padding: 20px; }
+  .card-title { font-size: 11px; font-weight: 600; color: #999; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 14px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th { text-align: left; font-weight: 500; color: #999; padding: 7px 10px; border-bottom: 1px solid #f0f0ec; font-size: 11px; white-space: nowrap; }
+  thead th.r { text-align: right; }
+  tbody td { padding: 9px 10px; border-bottom: 1px solid #f5f5f3; vertical-align: middle; color: #1a1a1a; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: #fafafa; }
+  .td-num { text-align: right; font-variant-numeric: tabular-nums; }
+  .td-highlight { font-weight: 600; color: #a05c00; }
+
+  .series-tag { display: inline-block; font-size: 10px; font-weight: 500; padding: 2px 7px; border-radius: 4px; margin-right: 5px; white-space: nowrap; }
+  .tag-shorts { background: #fef3e0; color: #a05c00; }
+  .tag-beemovie { background: #eaf2fb; color: #1a5fa3; }
+  .tag-podcast { background: #edf7f0; color: #1a7a42; }
+  .tag-etc { background: #f2f2f0; color: #666; }
+
+  .chart-wrap { position: relative; width: 100%; }
+
+  .insight-list { display: flex; flex-direction: column; gap: 11px; }
+  .insight-item { display: flex; gap: 10px; font-size: 13px; line-height: 1.6; }
+  .insight-num { font-size: 11px; font-weight: 700; min-width: 20px; padding-top: 2px; }
+  .c-amber { color: #a05c00; }
+  .c-blue { color: #1a5fa3; }
+  .c-green { color: #1a7a42; }
+  .c-gray { color: #888; }
+
+  .loading-overlay { position: fixed; inset: 0; background: rgba(245,245,243,0.85); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 999; gap: 14px; }
+  .loading-spinner { width: 36px; height: 36px; border: 3px solid #e0e0dc; border-top-color: #1a1a1a; border-radius: 50%; animation: spin 0.8s linear infinite; }
+  .loading-text { font-size: 14px; color: #666; }
+
+  .error-banner { background: #fff3f3; border: 1px solid #fcd0d0; border-radius: 8px; padding: 14px 18px; margin-bottom: 20px; font-size: 13px; color: #c0392b; display: none; }
+
+  .sort-btn { cursor: pointer; user-select: none; }
+  .sort-btn:hover { color: #1a1a1a; }
+
+  @media (max-width: 768px) {
+    .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+    .section-grid-2 { grid-template-columns: 1fr; }
+    .section-grid-equal { grid-template-columns: 1fr; }
+    .wrapper { padding: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="loading-spinner"></div>
+  <div class="loading-text">채널 데이터 불러오는 중...</div>
+</div>
+
+<div class="top-bar">
+  <div class="top-bar-left">
+    <div>
+      <div class="channel-name" id="channelName">스튜디오푸블 FOOVEL</div>
+      <div class="channel-handle">@studiofoovel &nbsp;·&nbsp; 대한민국 F&amp;B 브랜드 스토리</div>
+    </div>
+  </div>
+  <div class="top-bar-right">
+    <span class="last-updated" id="lastUpdated">—</span>
+    <button class="refresh-btn" id="refreshBtn" onclick="loadData()">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M1 4s1-3 7-3a7 7 0 1 1-7 7"/>
+        <polyline points="1 1 1 4 4 4"/>
+      </svg>
+      새로고침
+    </button>
+  </div>
+</div>
+
+<div class="wrapper">
+  <div class="error-banner" id="errorBanner"></div>
+
+  <div class="metrics-grid">
+    <div class="metric-card">
+      <div class="metric-label">구독자</div>
+      <div class="metric-value" id="metSubs">—</div>
+      <div class="metric-sub">명</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">총 조회수</div>
+      <div class="metric-value" id="metViews">—</div>
+      <div class="metric-sub">누적</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">업로드 영상</div>
+      <div class="metric-value" id="metVideos">—</div>
+      <div class="metric-sub" id="metVideosSub">편</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">채널 개설일</div>
+      <div class="metric-value" id="metAge">—</div>
+      <div class="metric-sub" id="metAgeSub">일째</div>
+    </div>
+  </div>
+
+  <div class="section-grid-2">
+    <div class="card">
+      <div class="card-title">영상별 조회수</div>
+      <div class="chart-wrap" style="height: 240px;">
+        <canvas id="viewsChart" role="img" aria-label="영상별 조회수 막대 그래프"></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">콘텐츠 유형별 조회수 비중</div>
+      <div class="chart-wrap" style="height: 180px;">
+        <canvas id="typeChart" role="img" aria-label="콘텐츠 유형별 조회수 도넛 차트"></canvas>
+      </div>
+      <div id="typeLegend" style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; font-size: 11px; color: #888;"></div>
+    </div>
+  </div>
+
+  <div class="section-grid-equal">
+    <div class="card">
+      <div class="card-title">참여율 비교 (좋아요/조회수)</div>
+      <div class="chart-wrap" style="height: 210px;">
+        <canvas id="engChart" role="img" aria-label="영상별 좋아요율 막대 그래프"></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">핵심 인사이트</div>
+      <div class="insight-list" id="insightList"></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom: 16px;">
+    <div class="card-title">전체 영상 현황 <span style="font-weight:400; text-transform:none; letter-spacing:0; color:#bbb; margin-left:6px;">제목 클릭 시 YouTube로 이동</span></div>
+    <table>
+      <thead>
+        <tr>
+          <th>제목</th>
+          <th>시리즈</th>
+          <th>업로드일</th>
+          <th>길이</th>
+          <th class="r sort-btn" onclick="sortTable('views')">조회수 ↕</th>
+          <th class="r sort-btn" onclick="sortTable('likes')">좋아요 ↕</th>
+          <th class="r sort-btn" onclick="sortTable('comments')">댓글 ↕</th>
+          <th class="r sort-btn" onclick="sortTable('likeRate')">좋아요율 ↕</th>
+        </tr>
+      </thead>
+      <tbody id="videoTableBody"></tbody>
+    </table>
+  </div>
+
+  <div style="text-align: center; font-size: 11px; color: #ccc; padding: 12px 0 4px;">
+    스튜디오푸블 FOOVEL 채널 분석 대시보드 &nbsp;·&nbsp; 데이터 출처: YouTube Data API v3
+  </div>
+</div>
+
+<script>
+const API_KEY = 'AIzaSyBrDew9INGEWGrlAnQLuJ17mOfvw3cnO5c';
+const CHANNEL_HANDLE = 'STUDIOFOOVEL';
+
+let allVideos = [];
+let sortKey = 'publishedAt';
+let sortAsc = false;
+let viewsChartInst = null;
+let typeChartInst = null;
+let engChartInst = null;
+
+function classifySeries(title) {
+  const t = title;
+  if (/쇼츠|#[^\s]+.*#[^\s]+|shorts/i.test(t) || t.includes('#짬뽕') || t.includes('#레시피') || t.includes('#중식')) return 'shorts';
+  if (/비무비|브랜드 이야기|f&b 브랜드/i.test(t)) return 'beemovie';
+  if (/팟캐스트|노포와힙포|podcast/i.test(t)) return 'podcast';
+  return 'etc';
+}
+
+function seriesLabel(s) {
+  return { shorts: '쇼츠', beemovie: '비무비', podcast: '팟캐스트', etc: '기타' }[s];
+}
+function seriesClass(s) {
+  return { shorts: 'tag-shorts', beemovie: 'tag-beemovie', podcast: 'tag-podcast', etc: 'tag-etc' }[s];
+}
+function seriesColor(s) {
+  return { shorts: '#c97c18', beemovie: '#1a5fa3', podcast: '#1a7a42', etc: '#888780' }[s];
+}
+
+function parseDuration(d) {
+  const m = d.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  const h = parseInt(m[1]||0), mi = parseInt(m[2]||0), s = parseInt(m[3]||0);
+  if (h > 0) return `${h}:${String(mi).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  return `${mi}:${String(s).padStart(2,'0')}`;
+}
+
+function isShort(duration) {
+  const m = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  const total = (parseInt(m[1]||0)*3600)+(parseInt(m[2]||0)*60)+(parseInt(m[3]||0));
+  return total <= 60;
+}
+
+function fmt(n) { return Number(n).toLocaleString('ko-KR'); }
+
+function daysSince(dateStr) {
+  const d = new Date(dateStr);
+  return Math.floor((Date.now() - d.getTime()) / 86400000);
+}
+
+function formatDate(dateStr) {
+  const d = new Date(dateStr);
+  return `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')}`;
+}
+
+async function loadData() {
+  const btn = document.getElementById('refreshBtn');
+  const overlay = document.getElementById('loadingOverlay');
+  const errBanner = document.getElementById('errorBanner');
+  btn.disabled = true;
+  btn.classList.add('spinning');
+  overlay.style.display = 'flex';
+  errBanner.style.display = 'none';
+
+  try {
+    const chRes = await fetch(`https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics,contentDetails&forHandle=${CHANNEL_HANDLE}&key=${API_KEY}`);
+    const chData = await chRes.json();
+    if (!chData.items || chData.items.length === 0) throw new Error('채널을 찾을 수 없습니다. API 키 또는 채널 핸들을 확인하세요.');
+
+    const ch = chData.items[0];
+    const stats = ch.statistics;
+    const uploadsId = ch.contentDetails.relatedPlaylists.uploads;
+    const publishedAt = ch.snippet.publishedAt;
+
+    document.getElementById('metSubs').textContent = fmt(stats.subscriberCount);
+    document.getElementById('metViews').textContent = fmt(stats.viewCount);
+    document.getElementById('metVideos').textContent = fmt(stats.videoCount);
+    document.getElementById('metVideosSub').textContent = `편 (총 업로드)`;
+    const days = daysSince(publishedAt);
+    document.getElementById('metAge').textContent = days;
+    document.getElementById('metAgeSub').textContent = `일째 (개설 ${formatDate(publishedAt)})`;
+
+    const plRes = await fetch(`https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails&playlistId=${uploadsId}&maxResults=20&key=${API_KEY}`);
+    const plData = await plRes.json();
+    const videoIds = (plData.items || []).map(i => i.contentDetails.videoId).join(',');
+
+    if (!videoIds) throw new Error('업로드된 영상이 없습니다.');
+
+    const vRes = await fetch(`https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,contentDetails&id=${videoIds}&key=${API_KEY}`);
+    const vData = await vRes.json();
+    allVideos = (vData.items || []).map(v => {
+      const dur = v.contentDetails.duration;
+      const short = isShort(dur);
+      const title = v.snippet.title;
+      const series = short ? 'shorts' : classifySeries(title);
+      return {
+        id: v.id,
+        title,
+        publishedAt: v.snippet.publishedAt,
+        duration: dur,
+        durationFmt: parseDuration(dur),
+        views: parseInt(v.statistics.viewCount || 0),
+        likes: parseInt(v.statistics.likeCount || 0),
+        comments: parseInt(v.statistics.commentCount || 0),
+        series,
+        isShort: short
+      };
+    });
+
+    allVideos.forEach(v => {
+      v.likeRate = v.views > 0 ? parseFloat((v.likes / v.views * 100).toFixed(2)) : 0;
+    });
+
+    renderTable();
+    renderCharts();
+    renderInsights();
+
+    document.getElementById('lastUpdated').textContent = '업데이트: ' + new Date().toLocaleString('ko-KR', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+
+  } catch(e) {
+    errBanner.textContent = '데이터 로드 오류: ' + e.message;
+    errBanner.style.display = 'block';
+    console.error(e);
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove('spinning');
+    overlay.style.display = 'none';
+  }
+}
+
+function sortTable(key) {
+  if (sortKey === key) sortAsc = !sortAsc;
+  else { sortKey = key; sortAsc = false; }
+  renderTable();
+}
+
+function renderTable() {
+  const sorted = [...allVideos].sort((a, b) => {
+    let av = a[sortKey], bv = b[sortKey];
+    if (typeof av === 'string') return sortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
+    return sortAsc ? av - bv : bv - av;
+  });
+
+  const tbody = document.getElementById('videoTableBody');
+  tbody.innerHTML = sorted.map(v => `
+    <tr>
+      <td style="max-width:280px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+        <a href="https://www.youtube.com/watch?v=${v.id}" target="_blank" style="color:#1a1a1a; text-decoration:none; font-size:12px;" title="${v.title}">${v.title}</a>
+      </td>
+      <td><span class="series-tag ${seriesClass(v.series)}">${seriesLabel(v.series)}</span></td>
+      <td style="color:#999; font-size:12px; white-space:nowrap;">${formatDate(v.publishedAt)}</td>
+      <td style="color:#999; font-size:12px; white-space:nowrap;">${v.durationFmt}</td>
+      <td class="td-num ${v.isShort ? 'td-highlight' : ''}">${fmt(v.views)}</td>
+      <td class="td-num">${fmt(v.likes)}</td>
+      <td class="td-num">${fmt(v.comments)}</td>
+      <td class="td-num">${v.likeRate.toFixed(1)}%</td>
+    </tr>
+  `).join('');
+}
+
+function renderCharts() {
+  const sorted = [...allVideos].sort((a,b) => b.views - a.views);
+  const labels = sorted.map(v => v.title.length > 14 ? v.title.slice(0,14)+'…' : v.title);
+  const views = sorted.map(v => v.views);
+  const colors = sorted.map(v => seriesColor(v.series));
+
+  if (viewsChartInst) viewsChartInst.destroy();
+  viewsChartInst = new Chart(document.getElementById('viewsChart'), {
+    type: 'bar',
+    data: { labels, datasets: [{ label: '조회수', data: views, backgroundColor: colors, borderRadius: 5, borderSkipped: false }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => ' ' + fmt(c.parsed.y) + '회' } } },
+      scales: {
+        x: { ticks: { color: '#aaa', font: { size: 10 }, autoSkip: false, maxRotation: 30 }, grid: { display: false } },
+        y: { ticks: { color: '#aaa', font: { size: 10 }, callback: v => v >= 1000 ? (v/1000).toFixed(0)+'k' : v }, grid: { color: '#f0f0ec' } }
+      }
+    }
+  });
+
+  const seriesMap = {};
+  allVideos.forEach(v => {
+    const s = v.series;
+    if (!seriesMap[s]) seriesMap[s] = 0;
+    seriesMap[s] += v.views;
+  });
+  const sKeys = Object.keys(seriesMap);
+  const sLabels = sKeys.map(s => seriesLabel(s) + ' (' + fmt(seriesMap[s]) + '회)');
+  const sColors = sKeys.map(s => seriesColor(s));
+
+  if (typeChartInst) typeChartInst.destroy();
+  typeChartInst = new Chart(document.getElementById('typeChart'), {
+    type: 'doughnut',
+    data: { labels: sLabels, datasets: [{ data: sKeys.map(s => seriesMap[s]), backgroundColor: sColors, borderWidth: 0, hoverOffset: 6 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: '68%',
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => ' ' + fmt(c.parsed) + '회' } } }
+    }
+  });
+
+  const legend = document.getElementById('typeLegend');
+  legend.innerHTML = sKeys.map((s, i) => `<span style="display:flex;align-items:center;gap:4px;"><span style="width:9px;height:9px;border-radius:2px;background:${sColors[i]};flex-shrink:0;"></span>${sLabels[i]}</span>`).join('');
+
+  const engSorted = [...allVideos].sort((a,b) => b.likeRate - a.likeRate);
+  const engLabels = engSorted.map(v => v.title.length > 12 ? v.title.slice(0,12)+'…' : v.title);
+  const engRates = engSorted.map(v => v.likeRate);
+  const engColors = engSorted.map(v => seriesColor(v.series));
+
+  if (engChartInst) engChartInst.destroy();
+  engChartInst = new Chart(document.getElementById('engChart'), {
+    type: 'bar',
+    data: { labels: engLabels, datasets: [{ label: '좋아요율(%)', data: engRates, backgroundColor: engColors, borderRadius: 5, borderSkipped: false }] },
+    options: {
+      indexAxis: 'y',
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => ' ' + c.parsed.x.toFixed(2) + '%' } } },
+      scales: {
+        x: { ticks: { color: '#aaa', font: { size: 10 }, callback: v => v+'%' }, grid: { color: '#f0f0ec' } },
+        y: { ticks: { color: '#666', font: { size: 10 } }, grid: { display: false } }
+      }
+    }
+  });
+}
+
+function renderInsights() {
+  const totalViews = allVideos.reduce((s, v) => s + v.views, 0);
+  const shorts = allVideos.filter(v => v.isShort);
+  const shortsViews = shorts.reduce((s, v) => s + v.views, 0);
+  const shortsPct = totalViews > 0 ? Math.round(shortsViews / totalViews * 100) : 0;
+
+  const longVideos = allVideos.filter(v => !v.isShort);
+  const topVideo = [...longVideos].sort((a, b) => b.views - a.views)[0];
+  const topEngVideo = [...allVideos].sort((a, b) => b.likeRate - a.likeRate)[0];
+
+  const dates = allVideos.map(v => new Date(v.publishedAt)).sort((a, b) => a - b);
+  let avgInterval = '—';
+  if (dates.length > 1) {
+    const diffs = [];
+    for (let i = 1; i < dates.length; i++) diffs.push((dates[i] - dates[i-1]) / 86400000);
+    avgInterval = (diffs.reduce((a, b) => a + b, 0) / diffs.length).toFixed(1);
+  }
+
+  const items = [];
+  if (shortsPct > 0) items.push({ cls: 'c-amber', num: '01', text: `쇼츠 ${shorts.length}편이 전체 조회수의 <strong>${shortsPct}%</strong>를 차지 — 롱폼 독자 조회수는 ${fmt(totalViews - shortsViews)}회` });
+  if (topVideo) items.push({ cls: 'c-blue', num: '02', text: `롱폼 최고 성과: <strong>${topVideo.title.slice(0,20)}…</strong> (${fmt(topVideo.views)}회)` });
+  if (topEngVideo) items.push({ cls: 'c-green', num: '03', text: `참여율 최고: <strong>${topEngVideo.title.slice(0,18)}…</strong> (좋아요율 ${topEngVideo.likeRate.toFixed(1)}%)` });
+  items.push({ cls: 'c-gray', num: '04', text: `평균 업로드 간격 <strong>${avgInterval}일</strong> — 주 ${(7 / parseFloat(avgInterval)).toFixed(1)}편 페이스` });
+
+  document.getElementById('insightList').innerHTML = items.map(i =>
+    `<div class="insight-item"><span class="insight-num ${i.cls}">${i.num}</span><span>${i.text}</span></div>`
+  ).join('');
+}
+
+loadData();
+</script>
+</body>
+</html>
